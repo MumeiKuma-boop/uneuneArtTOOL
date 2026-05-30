@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>もぞもぞペイント Pro - Ultimate Edition</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.js"></script>
+  <style>
+    body { margin: 0; padding: 0; background-color: #1a1a1a; overflow: hidden; font-family: sans-serif; color: #fff; user-select: none; }
+    #sidebar {
+      position: absolute; top: 10px; left: 10px; bottom: 10px; z-index: 10;
+      background: rgba(20, 20, 20, 0.95); border: 1px solid #444; backdrop-filter: blur(10px);
+      padding: 15px; border-radius: 12px; width: 260px; box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+      overflow-y: auto; display: flex; flex-direction: column; gap: 10px; scrollbar-width: thin;
+    }
+    #nav-info { position: absolute; bottom: 10px; right: 10px; background: rgba(0,0,0,0.7); padding: 8px 12px; border-radius: 6px; font-size: 11px; pointer-events: none; color: #aaa; z-index: 5; }
+    .section { border-bottom: 1px solid #333; padding-bottom: 8px; }
+    h3 { margin: 0 0 6px 0; font-size: 11px; text-transform: uppercase; color: #00ffcc; letter-spacing: 0.5px;}
+    label { display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-bottom: 4px; }
+    input[type="range"] { width: 110px; }
+    input[type="number"] { width: 60px; background: #333; border: 1px solid #555; color: white; border-radius: 4px; padding: 2px 4px; font-size: 12px; }
+    input[type="color"] { border: none; width: 40px; height: 22px; cursor: pointer; background: none; }
+    select, button { width: 100%; padding: 5px; background: #333; border: 1px solid #555; color: white; border-radius: 6px; cursor: pointer; font-size: 12px; margin-bottom: 2px; }
+    select:hover, button:hover { background: #444; }
+    .layer-item { display: flex; flex-direction: column; gap: 4px; padding: 6px; background: #222; border: 1px solid #3c3c3c; border-radius: 4px; margin-bottom: 4px; font-size: 11px; }
+    .layer-item.active { background: #005f9e; border-color: #007acc; }
+    .btn-group { display: flex; gap: 4px; }
+    .btn-small { width: auto; padding: 2px 6px; font-size: 10px; margin: 0; }
+    .toggle-active { background: #00ffcc !important; color: #000 !important; font-weight: bold; }
+    .airbrush-param { background: rgba(0, 255, 204, 0.05); padding: 4px; border-radius: 4px; margin-top: 2px; }
+    #fileInput, #projectInput { display: none; }
+    #gifOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 999; justify-content: center; align-items: center; font-weight: bold; font-size: 18px; color: #00ffcc; }
+  </style>
+</head>
+<body>
+
+  <div id="gifOverlay">📹 GIF録画中... 動かさずにお待ちください (<span id="gifProgress">0</span>/30)</div>
+
+  <div id="sidebar">
+    <div class="section">
+      <h3>歴史コントロール</h3>
+      <div class="btn-group">
+        <button id="undoBtn" style="background:#512da8; font-weight:bold;">↩ 取り消し (Undo)</button>
+        <button id="redoBtn" style="background:#00796b; font-weight:bold;">↪ やり直し (Redo)</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>メインツール</h3>
+      <select id="toolMode">
+        <option value="drawPen">🖊 描写ペンツール（絵を描く）</option>
+        <option value="shapeTool">📐 図形ツール（細かく調整）</option>
+        <option value="fxPen">✨ 特殊ペンツール（加工）</option>
+        <option value="eraser">🧽 消しゴムツール</option>
+        <option value="lasso">✨ なげわツール（切り取り変形）</option>
+        <option value="hand">✋ 画面移動</option>
+      </select>
+      <label>ミラー描画: 
+        <select id="mirrorMode">
+          <option value="none">なし</option>
+          <option value="horizontal">左右対称</option>
+          <option value="quad">4方向対称</option>
+        </select>
+      </label>
+    </div>
+
+    <div id="drawPenSection" class="section">
+      <h3>描写ペン設定</h3>
+      <label>ペンの種類: 
+        <select id="drawPenType">
+          <option value="airbrush">💨 調整式エアブラシ</option>
+          <option value="normal">通常ペン</option>
+          <option value="zigzag">⚡ ジグザグ</option>
+          <option value="neon">ネオン（光る）</option>
+          <option value="pulse">💗 脈動ペン</option>
+          <option value="dotted">点線ペン</option>
+          <option value="spray">スプレー/砂</option>
+          <option value="rainbow">🌈 レインボー</option>
+        </select>
+      </label>
+      <label>色: <input type="color" id="brushColor" value="#00ffcc"></label>
+      <label>太さ: <input type="range" id="drawBrushSize" min="5" max="150" value="50"></label>
+      <label>不透明度: <input type="range" id="drawBrushAlpha" min="10" max="255" value="150"></label>
+      
+      <div id="airbrushParams">
+        <label class="airbrush-param">└ ブラシの硬さ: <input type="range" id="abHardness" min="0" max="100" value="20"></label>
+        <label class="airbrush-param">└ ブラシ濃度: <input type="range" id="abDensity" min="5" max="100" value="30"></label>
+        <label class="airbrush-param">└ にじみの強さ: <input type="range" id="abSpread" min="0" max="100" value="20"></label>
+      </div>
+    </div>
+
+    <div id="shapeSection" class="section" style="display:none;">
+      <h3>図形設定</h3>
+      <label>図形の種類: 
+        <select id="shapeType">
+          <option value="circle">⚪ 丸（正円）</option>
+          <option value="rect">🔲 四角（長方形）</option>
+          <option value="polygon">🔷 多角形（角数可変）</option>
+          <option value="star">⭐ 星型</option>
+          <option value="heart">💖 ハート</option>
+        </select>
+      </label>
+      <div id="polyParam" style="display:none;" class="airbrush-param">
+        <label id="verticesLabel">└ 角の数: <input type="range" id="shapeVertices" min="3" max="12" value="5"></label>
+      </div>
+      <label>描画モード: 
+        <select id="shapeMode">
+          <option value="fill">塗りつぶしのみ</option>
+          <option value="stroke">線のみ</option>
+          <option value="both">塗り＋線両方</option>
+        </select>
+      </label>
+      <label>塗りの色: <input type="color" id="shapeFillColor" value="#00ffcc"></label>
+      <label>線の色: <input type="color" id="shapeStrokeColor" value="#ffffff"></label>
+      <label>線の太さ: <input type="range" id="shapeStrokeWeight" min="1" max="50" value="5"></label>
+      <label>不透明度: <input type="range" id="shapeAlpha" min="10" max="255" value="200"></label>
+    </div>
+
+    <div id="fxPenSection" class="section" style="display:none;">
+      <h3>特殊ペン設定</h3>
+      <label>効果の種類: 
+        <select id="fxType">
+          <option value="blur">✨ ピントぼかし</option>
+          <option value="mosaic">🟩 pixelドットモザイク</option>
+        </select>
+      </label>
+      <label>ブラシの太さ: <input type="range" id="fxBrushSize" min="10" max="200" value="50"></label>
+      <label id="pixelSizeLabel" style="color:#00ffcc;">効果の粗さ(Pixel): <input type="range" id="fxPixelSize" min="2" max="60" value="15"></label>
+      <label>効果の不透明度: <input type="range" id="fxBrushAlpha" min="10" max="255" value="200"></label>
+    </div>
+    
+    <div id="eraserSection" class="section" style="display:none;">
+      <h3>消しゴム設定</h3>
+      <label>太さ: <input type="range" id="eraserSize" min="5" max="100" value="30"></label>
+    </div>
+
+    <div id="lassoSection" class="section" style="display:none;">
+      <h3>なげわ変形コントローラー</h3>
+      <p style="font-size:10px; margin:0 0 5px 0; color:#00ffcc;">囲んだ中身をドラッグで移動できます</p>
+      <label>選択内の拡大縮小: <input type="range" id="lassoScale" min="0.3" max="2.5" step="0.05" value="1.0"></label>
+      <button id="clearLassoBtn" style="background:#005f9e; font-weight:bold;">選択解除（位置を確定）</button>
+    </div>
+
+    <div class="section">
+      <h3>画面一括フィルター</h3>
+      <div class="btn-group" style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+        <button id="fltBlur" class="btn-small">全体ぼかし</button>
+        <button id="fltMosaic" class="btn-small">全体モザイク</button>
+        <button id="fltGray" class="btn-small">モノクロ</button>
+        <button id="fltSepia" class="btn-small">セピア調</button>
+        <button id="fltInvert" class="btn-small">ネオン反転</button>
+        <button id="fltPoster" class="btn-small">ポスタライズ</button>
+        <button id="fltThresh" class="btn-small">白黒2値化</button>
+      </div>
+    </div>
+
+    <div class="section">
+      <h3>動きの設定</h3>
+      <label>パターン:
+        <select id="movePattern">
+          <option value="mozomozo">🐛 細かもぞもぞ</option>
+          <option value="unewune">🌊 大きくうねうね</option>
+          <option value="zarazara">📺 ザラザラ</option>
+          <option value="dokudoku">❤️ ドクドク</option>
+          <option value="pause">⏸ 一時停止</option>
+        </select>
+      </label>
+      <label>激しさ: <input type="range" id="mozX" min="0" max="30" value="8"></label>
+      <label>スピード: <input type="range" id="mozSpeed" min="0" max="10" value="5"></label>
+    </div>
+
+    <div class="section">
+      <h3>キャンバス設定</h3>
+      <label>背景色: <input type="color" id="bgColor" value="#1a1a1a"></label>
+      <div style="display: flex; gap: 4px; margin-top: 4px; margin-bottom: 4px; justify-content: space-between; align-items: center;">
+        <span style="font-size: 11px;">サイズ:</span>
+        <input type="number" id="canvasWidthInput" value="800">
+        <span style="font-size: 11px;">×</span>
+        <input type="number" id="canvasHeightInput" value="600">
+      </div>
+      <button id="resizeCanvasBtn" style="background:#424242; font-size:11px; margin-bottom:4px;">📐 サイズ変更を適用</button>
+      <button id="gridBtn" class="btn-small">方眼紙グリッド: OFF</button>
+    </div>
+
+    <div class="section">
+      <h3>レイヤー</h3>
+      <div id="layerList"></div>
+      <button id="addLayerBtn" style="font-size:11px; margin-bottom: 4px;">+ 空の新規レイヤー</button>
+      <button id="loadImageBtn" style="font-size:11px; background:#e65100; font-weight:bold;">🖼 画像を開く</button>
+      <input type="file" id="fileInput" accept="image/*">
+    </div>
+
+    <div class="section">
+      <h3>保存・書き出し</h3>
+      <div class="btn-group">
+        <button id="savePngBtn" style="background:#2e7d32; font-size:11px; font-weight:bold;">静止画 (PNG)</button>
+        <button id="saveGifBtn" style="background:#ad1457; font-size:11px; font-weight:bold;">🎬 動く画像 (GIF)</button>
+      </div>
+      <div class="btn-group" style="margin-top: 4px;">
+        <button id="saveProjectBtn" style="background:#0288d1; font-size:11px;">💾 途中保存 (.mozo)</button>
+        <button id="loadProjectBtn" style="background:#f57c00; font-size:11px;">📂 途中読み込み</button>
+      </div>
+      <input type="file" id="projectInput" accept=".mozo">
+      <button id="clearBtn" style="background:#c62828; font-size:11px; margin-top: 4px;">現在レイヤーをクリア</button>
+    </div>
+  </div>
+
+  <div id="nav-info">ズーム: <span id="zoomPercent">100</span>% | [Space+ドラッグ] 画面移動 | Ctrl+Z / Y 対応</div>
+
+  <script>
+    let layers = [];
+    let activeLayerId = 0;
+    let layerCounter = 0;
+
+    let zoom = 1.0;
+    let offsetX = 0, offsetY = 0;
+    let isPanning = false;
+    let startPanX = 0, startPanY = 0;
+    let showGrid = false;
+    
+    let currentCanvasW = 800;
+    let currentCanvasH = 600;
+
+    let globalFilters = { blur: false, mosaic: false, gray: false, sepia: false, invert: false, poster: false, thresh: false };
+
+    let lassoPoints = [];
+    let isDrawingLasso = false;
+    let isMovingLasso = false;
+    let lassoSelectedLines = []; 
+    let lassoPos = { x: 0, y: 0 }; 
+    let currentLassoScale = 1.0;
+
+    let currentLine = null;
+    let shapeStartPos = null; 
+
+    let undoStack = [];
+    let redoStack = [];
+
+    let bufferImg; 
+
+    let recordingGif = false;
+    let gifFrames = [];
+    const maxGifFrames = 30;
+
+    function setup() {
+      currentCanvasW = windowWidth;
+      currentCanvasH = windowHeight;
+      document.getElementById('canvasWidthInput').value = currentCanvasW;
+      document.getElementById('canvasHeightInput').value = currentCanvasH;
+
+      createCanvas(windowWidth, windowHeight);
+      bufferImg = createGraphics(currentCanvasW, currentCanvasH);
+      addLayer("レイヤー 1");
+      
+      saveHistory();
+
+      const toolSelect = document.getElementById('toolMode');
+      const penTypeSelect = document.getElementById('drawPenType');
+      const shapeTypeSelect = document.getElementById('shapeType');
+      
+      function toggleSections() {
+        let mode = toolSelect.value;
+        document.getElementById('drawPenSection').style.display = mode === 'drawPen' ? 'block' : 'none';
+        document.getElementById('shapeSection').style.display = mode === 'shapeTool' ? 'block' : 'none';
+        document.getElementById('fxPenSection').style.display = mode === 'fxPen' ? 'block' : 'none';
+        document.getElementById('eraserSection').style.display = mode === 'eraser' ? 'block' : 'none';
+        document.getElementById('lassoSection').style.display = mode === 'lasso' ? 'block' : 'none';
+        
+        if(mode === 'drawPen' && penTypeSelect.value === 'airbrush') {
+          document.getElementById('airbrushParams').style.display = 'block';
+        } else {
+          document.getElementById('airbrushParams').style.display = 'none';
+        }
+
+        if(mode === 'shapeTool' && (shapeTypeSelect.value === 'polygon' || shapeTypeSelect.value === 'star')) {
+          document.getElementById('polyParam').style.display = 'block';
+        } else {
+          document.getElementById('polyParam').style.display = 'none';
+        }
+      }
+
+      toolSelect.addEventListener('change', (e) => {
+        toggleSections();
+        if(e.target.value !== 'lasso') finalizeLasso();
+      });
+      penTypeSelect.addEventListener('change', toggleSections);
+      shapeTypeSelect.addEventListener('change', toggleSections);
+
+      document.getElementById('addLayerBtn').addEventListener('click', () => {
+        addLayer("レイヤー " + (layers.length + 1));
+        saveHistory();
+      });
+      
+      const fileInput = document.getElementById('fileInput');
+      document.getElementById('loadImageBtn').addEventListener('click', () => fileInput.click());
+      fileInput.addEventListener('change', handleImageUpload);
+
+      document.getElementById('clearBtn').addEventListener('click', () => { 
+        let al = layers.find(l => l.id === activeLayerId);
+        if (al) { al.lines = []; al.imgElement = null; saveHistory(); }
+      });
+      document.getElementById('gridBtn').addEventListener('click', function() { showGrid = !showGrid; this.innerText = "方眼紙グリッド: " + (showGrid?"ON":"OFF"); this.classList.toggle('toggle-active', showGrid); });
+      document.getElementById('clearLassoBtn').addEventListener('click', () => { finalizeLasso(); saveHistory(); });
+      document.getElementById('lassoScale').addEventListener('input', (e) => { currentLassoScale = parseFloat(e.target.value); });
+
+      document.getElementById('undoBtn').addEventListener('click', executeUndo);
+      document.getElementById('redoBtn').addEventListener('click', executeRedo);
+
+      document.getElementById('resizeCanvasBtn').addEventListener('click', () => {
+        let w = parseInt(document.getElementById('canvasWidthInput').value);
+        let h = parseInt(document.getElementById('canvasHeightInput').value);
+        if (w > 50 && h > 50) {
+          currentCanvasW = w;
+          currentCanvasH = h;
+          bufferImg.resizeCanvas(currentCanvasW, currentCanvasH);
+          saveHistory();
+          alert(`キャンバスサイズを ${currentCanvasW} × ${currentCanvasH} に変更しました。`);
+        } else {
+          alert("正しいサイズを入力してください(50px以上)");
+        }
+      });
+
+      document.getElementById('fltBlur').addEventListener('click', () => { toggleGlobalFilter('blur'); });
+      document.getElementById('fltMosaic').addEventListener('click', () => { toggleGlobalFilter('mosaic'); });
+      document.getElementById('fltGray').addEventListener('click', () => { toggleGlobalFilter('gray'); });
+      document.getElementById('fltSepia').addEventListener('click', () => { toggleGlobalFilter('sepia'); });
+      document.getElementById('fltInvert').addEventListener('click', () => { toggleGlobalFilter('invert'); });
+      document.getElementById('fltPoster').addEventListener('click', () => { toggleGlobalFilter('poster'); });
+      document.getElementById('fltThresh').addEventListener('click', () => { toggleGlobalFilter('thresh'); });
+
+      document.getElementById('saveProjectBtn').addEventListener('click', exportProject);
+      const projectInput = document.getElementById('projectInput');
+      document.getElementById('loadProjectBtn').addEventListener('click', () => projectInput.click());
+      projectInput.addEventListener('change', importProject);
+
+      document.getElementById('savePngBtn').addEventListener('click', () => { saveCanvas('mozo-art', 'png'); });
+      document.getElementById('saveGifBtn').addEventListener('click', startGifRecording);
+      
+      document.getElementById('sidebar').addEventListener('mousedown', (e) => e.stopPropagation());
+      document.getElementById('sidebar').addEventListener('mouseup', (e) => e.stopPropagation());
+    }
+
+    function saveHistory() {
+      if (undoStack.length > 30) undoStack.shift();
+      
+      let stateSnapshot = layers.map(l => {
+        return {
+          id: l.id, name: l.name, visible: l.visible, opacity: l.opacity,
+          lines: JSON.parse(JSON.stringify(l.lines)), 
+          imgElement: l.imgElement, imgX: l.imgX, imgY: l.imgY, imgW: l.imgW, imgH: l.imgH
+        };
+      });
+      
+      undoStack.push({
+        layersState: stateSnapshot,
+        activeLayerId: activeLayerId,
+        filtersState: { ...globalFilters },
+        canvasW: currentCanvasW,
+        canvasH: currentCanvasH
+      });
+      redoStack = [];
+    }
+
+    function executeUndo() {
+      if (undoStack.length <= 1) return; 
+      let currentState = undoStack.pop();
+      redoStack.push(currentState);
+      let prevState = undoStack[undoStack.length - 1];
+      restoreState(prevState);
+    }
+
+    function executeRedo() {
+      if (redoStack.length === 0) return;
+      let nextState = redoStack.pop();
+      undoStack.push(nextState);
+      restoreState(nextState);
+    }
+
+    function restoreState(stateObj) {
+      activeLayerId = stateObj.activeLayerId;
+      layers = stateObj.layersState.map(l => {
+        return {
+          id: l.id, name: l.name, visible: l.visible, opacity: l.opacity,
+          lines: JSON.parse(JSON.stringify(l.lines)),
+          imgElement: l.imgElement, imgX: l.imgX, imgY: l.imgY, imgW: l.imgW, imgH: l.imgH
+        };
+      });
+      if(stateObj.filtersState) { globalFilters = { ...stateObj.filtersState }; }
+      if(stateObj.canvasW && stateObj.canvasH) {
+        currentCanvasW = stateObj.canvasW;
+        currentCanvasH = stateObj.canvasH;
+        document.getElementById('canvasWidthInput').value = currentCanvasW;
+        document.getElementById('canvasHeightInput').value = currentCanvasH;
+        bufferImg.resizeCanvas(currentCanvasW, currentCanvasH);
+      }
+      updateLayerUI();
+      updateFilterButtonsUI();
+    }
+
+    function keyPressed() {
+      if (keyIsDown(CONTROL) || keyIsDown(91)) { 
+        if (key === 'z' || key === 'Z') { executeUndo(); }
+        if (key === 'y' || key === 'Y') { executeRedo(); }
+      }
+    }
+
+    function handleImageUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        loadImage(event.target.result, (loadedImg) => {
+          let ratio = min((currentCanvasW * 0.6) / loadedImg.width, (currentCanvasH * 0.6) / loadedImg.height);
+          if (ratio > 1) ratio = 1;
+          let w = loadedImg.width * ratio; let h = loadedImg.height * ratio;
+          let x = (currentCanvasW - w) / 2; let y = (currentCanvasH - h) / 2;
+          let id = layerCounter++;
+          layers.unshift({ id: id, name: "🖼 " + file.name.substring(0, 10), visible: true, opacity: 255, lines: [], imgElement: loadedImg, imgX: x, imgY: y, imgW: w, imgH: h });
+          activeLayerId = id; updateLayerUI(); saveHistory(); 
+        });
+      };
+      reader.readAsDataURL(file);
+      e.target.value = '';
+    }
+
+    function draw() {
+      let bgCol = color(document.getElementById('bgColor').value);
+      background(30); 
+
+      push();
+      translate(offsetX, offsetY);
+      scale(zoom);
+      fill(bgCol);
+      noStroke();
+      rect(0, 0, currentCanvasW, currentCanvasH);
+      if (showGrid) drawGrid(bgCol);
+      pop();
+
+      const intensity = parseFloat(document.getElementById('mozX').value);
+      const speed = parseFloat(document.getElementById('mozSpeed').value) * 0.1;
+      const pattern = document.getElementById('movePattern').value;
+      let mode = document.getElementById('toolMode').value;
+
+      if (mouseIsPressed && currentLine && mouseX >= 280 && mode === 'drawPen') {
+        let m = getCanvasMouse();
+        let lastPt = currentLine.points[currentLine.points.length - 1];
+        if (!lastPt || dist(m.x, m.y, lastPt.x, lastPt.y) > 2) {
+          currentLine.points.push({ x: m.x, y: m.y, seed: performance.now() + random(1000, 99999) });
+        }
+      }
+
+      if (mouseIsPressed && mode === 'fxPen' && currentLine && mouseX >= 280) {
+        let m = getCanvasMouse();
+        let lastPt = currentLine.points[currentLine.points.length - 1];
+        if (!lastPt || dist(m.x, m.y, lastPt.x, lastPt.y) > 4) {
+          currentLine.points.push({ x: m.x, y: m.y, seed: performance.now() + random(1000, 99999) });
+        }
+      }
+
+      if (mouseIsPressed && mode === 'shapeTool' && shapeStartPos && currentLine) {
+        let m = getCanvasMouse();
+        generateShapePoints(currentLine, shapeStartPos, m);
+      }
+
+      bufferImg.clear();
+      bufferImg.push();
+      for (let i = layers.length - 1; i >= 0; i--) {
+        let layer = layers[i];
+        if (!layer.visible) continue;
+        bufferImg.drawingContext.globalAlpha = layer.opacity / 255;
+
+        if (layer.imgElement) {
+          let dummyPt = { x: layer.imgX, y: layer.imgY, seed: layer.id * 555 };
+          let pos = calculateMozoOffset(dummyPt, pattern, intensity, speed);
+          bufferImg.image(layer.imgElement, pos.x, pos.y, layer.imgW, layer.imgH);
+        }
+
+        let allLines = [...layer.lines];
+        if (layer.id === activeLayerId && currentLine) allLines.push(currentLine);
+
+        for (let lineObj of allLines) {
+          if (lineObj.type !== 'fx_blur' && lineObj.type !== 'fx_mosaic') {
+            drawMozoLineToTarget(bufferImg, lineObj, pattern, intensity, speed);
+          }
+        }
+        if (layer.id === activeLayerId && lassoSelectedLines.length > 0) {
+          bufferImg.push();
+          bufferImg.translate(lassoPos.x, lassoPos.y);
+          bufferImg.scale(currentLassoScale);
+          for (let lineObj of lassoSelectedLines) {
+            if (lineObj.type !== 'fx_blur' && lineObj.type !== 'fx_mosaic') {
+              drawMozoLineToTarget(bufferImg, lineObj, pattern, intensity, speed);
+            }
+          }
+          bufferImg.pop();
+        }
+      }
+      bufferImg.pop();
+
+      // 特殊ペン用のピクセルバッファ同期
+      bufferImg.loadPixels();
+
+      // 特殊ペンのスタンプ処理
+      for (let i = layers.length - 1; i >= 0; i--) {
+        let layer = layers[i];
+        if (!layer.visible) continue;
+        let allLines = [...layer.lines];
+        if (layer.id === activeLayerId && currentLine) allLines.push(currentLine);
+
+        for (let lineObj of allLines) {
+          if (lineObj.type === 'fx_blur' || lineObj.type === 'fx_mosaic') {
+            drawSpecialFXLine(bufferImg, lineObj, pattern, intensity, speed);
+          }
+        }
+        if (layer.id === activeLayerId && lassoSelectedLines.length > 0) {
+          bufferImg.push(); bufferImg.translate(lassoPos.x, lassoPos.y); bufferImg.scale(currentLassoScale);
+          for (let lineObj of lassoSelectedLines) {
+            if (lineObj.type === 'fx_blur' || lineObj.type === 'fx_mosaic') {
+              drawSpecialFXLine(bufferImg, lineObj, pattern, intensity, speed);
+            }
+          }
+          bufferImg.pop();
+        }
+      }
+
+      // 全体一括フィルターの適用
+      applyActiveGlobalFiltersToBuffer(bufferImg);
+
+      push();
+      translate(offsetX, offsetY);
+      scale(zoom);
+      image(bufferImg, 0, 0);
+      pop();
+
+      if (lassoPoints.length > 0) {
+        push(); translate(offsetX, offsetY); scale(zoom);
+        stroke(0, 180, 255); strokeWeight(2 / zoom); noFill();
+        if (isMovingLasso || lassoSelectedLines.length > 0) translate(lassoPos.x, lassoPos.y);
+        beginShape();
+        for (let p of lassoPoints) vertex(p.x, p.y);
+        endShape(CLOSE);
+        pop();
+      }
+
+      if (recordingGif && frameCount % 3 === 0) {
+        gifFrames.push(get(offsetX, offsetY, currentCanvasW * zoom, currentCanvasH * zoom));
+        document.getElementById('gifProgress').innerText = gifFrames.length;
+        if (gifFrames.length >= maxGifFrames) {
+          recordingGif = false;
+          finalizeGifExport();
+        }
+      }
+    }
+
+    function generateShapePoints(lineObj, start, end) {
+      lineObj.points = [];
+      let type = document.getElementById('shapeType').value;
+      let cx = start.x; let cy = start.y;
+      let rx = end.x - start.x; let ry = end.y - start.y;
+      let radius = dist(cx, cy, end.x, end.y);
+      let angle = atan2(ry, rx);
+
+      if (type === 'circle') {
+        let segments = 64;
+        for (let i = 0; i < segments; i++) {
+          let a = TWO_PI * (i / segments);
+          lineObj.points.push({ x: cx + cos(a) * radius, y: cy + sin(a) * radius, seed: i * 123.45 });
+        }
+      } 
+      else if (type === 'rect') {
+        let steps = 15;
+        for(let i=0; i<=steps; i++) lineObj.points.push({ x: cx + rx*(i/steps), y: cy, seed: 100+i });
+        for(let i=1; i<=steps; i++) lineObj.points.push({ x: cx + rx, y: cy + ry*(i/steps), seed: 200+i });
+        for(let i=1; i<=steps; i++) lineObj.points.push({ x: cx + rx*(1 - i/steps), y: cy + ry, seed: 300+i });
+        for(let i=1; i<steps; i++)  lineObj.points.push({ x: cx, y: cy + ry*(1 - i/steps), seed: 400+i });
+      } 
+      else if (type === 'polygon' || type === 'star') {
+        let vertices = type === 'star' ? parseInt(document.getElementById('shapeVertices').value) * 2 : parseInt(document.getElementById('shapeVertices').value);
+        for (let i = 0; i < vertices; i++) {
+          let a = angle + TWO_PI * (i / vertices);
+          let r = (type === 'star' && i % 2 === 1) ? radius * 0.4 : radius;
+          lineObj.points.push({ x: cx + cos(a) * r, y: cy + sin(a) * r, seed: i * 543.21 });
+        }
+      }
+      else if (type === 'heart') {
+        let segments = 60;
+        let sizeFactor = radius * 0.06; 
+        for (let i = 0; i < segments; i++) {
+          let t = TWO_PI * (i / segments);
+          let hx = 16 * Math.pow(Math.sin(t), 3);
+          let hy = -(13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t));
+          let rotatedX = hx * Math.cos(angle) - hy * Math.sin(angle);
+          let rotatedY = hx * Math.sin(angle) + hy * Math.cos(angle);
+          lineObj.points.push({ x: cx + rotatedX * sizeFactor, y: cy + rotatedY * sizeFactor, seed: i * 789.12 });
+        }
+      }
+    }
+
+    function drawMozoLineToTarget(g, lineObj, pattern, intensity, speed) {
+      if (!lineObj.points || lineObj.points.length < 1) return;
+      let loops = lineObj.mirror === 'horizontal' ? 2 : (lineObj.mirror === 'quad' ? 4 : 1);
+
+      for (let m = 0; m < loops; m++) {
+        g.push();
+        if (m === 1) { g.translate(currentCanvasW, 0); g.scale(-1, 1); }
+        if (m === 2) { g.translate(0, currentCanvasH); g.scale(1, -1); }
+        if (m === 3) { g.translate(currentCanvasW, currentCanvasH); g.scale(-1, -1); }
+
+        if (!lineObj.isShape) {
+          let baseColor = g.color(lineObj.color);
+          baseColor.setAlpha(lineObj.alpha);
+          g.stroke(baseColor); g.strokeWeight(lineObj.size); g.noFill(); 
+          g.strokeCap(ROUND); g.strokeJoin(ROUND);
+          g.drawingContext.globalCompositeOperation = lineObj.type === 'eraser' ? 'destination-out' : 'source-over';
+
+          if (lineObj.type === 'spray' || lineObj.type === 'airbrush') {
+            for (let i = 0; i < lineObj.points.length; i++) {
+              let pt = lineObj.points[i];
+              let spreadWeight = lineObj.type === 'airbrush' ? 1.0 + (lineObj.abSpread || 20) * 0.05 : 1.0;
+              let pos = calculateMozoOffset(pt, pattern, intensity * spreadWeight, speed);
+              if (lineObj.type === 'spray') {
+                g.fill(baseColor); g.noStroke(); g.randomSeed(Math.floor(pt.seed));
+                for(let s=0; s<4; s++) g.circle(pos.x + g.random(-lineObj.size, lineObj.size)*0.4, pos.y + g.random(-lineObj.size, lineObj.size)*0.4, 2);
+              } else {
+                let h = lineObj.abHardness || 20; let d = lineObj.abDensity || 30;
+                g.push(); g.noStroke();
+                for (let r = lineObj.size; r > 0; r -= lineObj.size * 0.1) {
+                  let ratio = r / lineObj.size;
+                  let currentAlpha = lineObj.alpha * (d / 100) * (ratio < (h/100) ? 1.0 : (1.0 - ratio));
+                  let c = g.color(baseColor); c.setAlpha(currentAlpha * 0.25); g.fill(c); g.circle(pos.x, pos.y, r * 2);
+                }
+                g.pop();
+              }
+            }
+            g.pop(); continue;
+          }
+
+          g.beginShape();
+          for (let i = 0; i < lineObj.points.length; i++) {
+            let pos = calculateMozoOffset(lineObj.points[i], pattern, intensity, speed);
+            if (lineObj.type === 'rainbow') { g.colorMode(HSB, 360, 255, 255); g.stroke((i * 5 + frameCount * 2) % 360, 200, 255, lineObj.alpha); }
+            if (lineObj.type === 'pulse') g.strokeWeight(lineObj.size * (1.0 + sin(i * 0.5 + frameCount * 0.15) * 0.3));
+            if (lineObj.type === 'zigzag') g.vertex(pos.x + (i % 2 === 0 ? 1 : -1) * (lineObj.size * 0.25), pos.y + (i % 2 === 0 ? -1 : 1) * (lineObj.size * 0.25));
+            else if (lineObj.type === 'dotted') { g.endShape(); if (i % 4 === 0) { g.push(); g.noStroke(); g.fill(baseColor); g.circle(pos.x, pos.y, lineObj.size); g.pop(); } g.beginShape(); }
+            else g.vertex(pos.x, pos.y);
+          }
+          g.endShape();
+          if (lineObj.type === 'neon') {
+            g.stroke(255, lineObj.alpha); g.strokeWeight(lineObj.size * 0.25); g.beginShape();
+            for (let i = 0; i < lineObj.points.length; i++) { let pos = calculateMozoOffset(lineObj.points[i], pattern, intensity, speed); g.vertex(pos.x, pos.y); }
+            g.endShape();
+          }
+        } else {
+          g.drawingContext.globalCompositeOperation = 'source-over';
+          let fCol = g.color(lineObj.fillColor); fCol.setAlpha(lineObj.alpha);
+          let sCol = g.color(lineObj.strokeColor); sCol.setAlpha(lineObj.alpha);
+          if (lineObj.shapeMode === 'fill' || lineObj.shapeMode === 'both') g.fill(fCol); else g.noFill();
+          if (lineObj.shapeMode === 'stroke' || lineObj.shapeMode === 'both') { g.stroke(sCol); g.strokeWeight(lineObj.strokeWeight); } else g.noStroke();
+          g.strokeJoin(ROUND);
+          g.beginShape();
+          for (let i = 0; i < lineObj.points.length; i++) { let pos = calculateMozoOffset(lineObj.points[i], pattern, intensity, speed); g.vertex(pos.x, pos.y); }
+          g.endShape(CLOSE);
+        }
+        g.pop();
+      }
+    }
+
+    // 【ズレ解消修正版】特殊効果ペンの描画処理
+    function drawSpecialFXLine(g, lineObj, pattern, intensity, speed) {
+      if(lineObj.isShape) return;
+      let loops = lineObj.mirror === 'horizontal' ? 2 : (lineObj.mirror === 'quad' ? 4 : 1);
+      let pSize = lineObj.pixelSize || 15;
+      
+      for (let m = 0; m < loops; m++) {
+        g.push();
+        if (m === 1) { g.translate(currentCanvasW, 0); g.scale(-1, 1); }
+        if (m === 2) { g.translate(0, currentCanvasH); g.scale(1, -1); }
+        if (m === 3) { g.translate(currentCanvasW, currentCanvasH); g.scale(-1, -1); }
+        
+        for (let i = 0; i < lineObj.points.length; i++) {
+          let pos = calculateMozoOffset(lineObj.points[i], pattern, intensity, speed);
+          
+          // ズームやスクロールのズレを完全に排除した「キャンバス上のインデックス」を特定
+          let sampleX = Math.floor(constrain(pos.x, 0, currentCanvasW - 1)); 
+          let sampleY = Math.floor(constrain(pos.y, 0, currentCanvasH - 1));
+          
+          let idx = (sampleX + sampleY * currentCanvasW) * 4;
+          let r = g.pixels[idx]; let green = g.pixels[idx+1]; let b = g.pixels[idx+2]; let a = g.pixels[idx+3];
+          if (a === 0 || a === undefined) continue; // 透明箇所はスキップ
+          
+          let col = g.color(r, green, b, lineObj.alpha);
+          if (lineObj.type === 'fx_mosaic') {
+            g.fill(col); g.noStroke();
+            let mosX = Math.round(pos.x / pSize) * pSize; let mosY = Math.round(pos.y / pSize) * pSize;
+            g.rect(mosX - pSize/2, mosY - pSize/2, pSize, pSize);
+          } else if (lineObj.type === 'fx_blur') {
+            let blurRadius = lineObj.size * 0.4 + (pSize * 0.8);
+            let radialG = g.drawingContext.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, blurRadius);
+            radialG.addColorStop(0, g.color(r, green, b, lineObj.alpha * 0.15).toString());
+            radialG.addColorStop(1, g.color(r, green, b, 0).toString());
+            g.drawingContext.fillStyle = radialG; g.noStroke(); g.circle(pos.x, pos.y, blurRadius * 2);
+          }
+        }
+        g.pop();
+      }
+    }
+
+    function calculateMozoOffset(pt, pattern, intensity, speed) {
+      if (pattern === 'pause' || intensity === 0) return { x: pt.x, y: pt.y };
+      let to = frameCount * speed + pt.seed;
+      let ox = 0, oy = 0;
+      if (pattern === 'mozomozo') { ox = (noise(to, pt.seed * 0.01) - 0.5) * intensity; oy = (noise(pt.seed * 0.01, to) - 0.5) * intensity; } 
+      else if (pattern === 'unewune') { ox = sin(to + pt.seed * 0.001) * intensity; oy = cos(to + pt.seed * 0.0015) * intensity; } 
+      else if (pattern === 'zarazara') { ox = random(-intensity, intensity) * 0.3; oy = random(-intensity, intensity) * 0.3; } 
+      else if (pattern === 'dokudoku') { let s = sin(to * 1.5) * (intensity * 0.08); ox = sin(pt.seed) * s; oy = cos(pt.seed * 1.1) * s; }
+      return { x: pt.x + ox, y: pt.y + oy };
+    }
+
+    // マウス座標からスクロール量とズーム量を逆算してキャンバス座標を正確に取る関数
+    function getCanvasMouse() { return { x: (mouseX - offsetX) / zoom, y: (mouseY - offsetY) / zoom }; }
+
+    function isPointInLasso(x, y, poly) {
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        let xi = poly[i].x, yi = poly[i].y; let xj = poly[j].x, yj = poly[j].y;
+        if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi)) inside = !inside;
+      }
+      return inside;
+    }
+
+    function mousePressed() {
+      if (mouseX < 280) return; 
+      let mode = document.getElementById('toolMode').value;
+      let m = getCanvasMouse();
+
+      if (mode === 'hand' || keyIsDown(32)) { 
+        isPanning = true; startPanX = mouseX - offsetX; startPanY = mouseY - offsetY;
+      } else if (mode === 'lasso') {
+        if (lassoSelectedLines.length > 0 && isPointInLasso(m.x - lassoPos.x, m.y - lassoPos.y, lassoPoints)) {
+          isMovingLasso = true; currentLine = { points: [{ x: m.x, y: m.y }] }; 
+        } else {
+          finalizeLasso(); isDrawingLasso = true; lassoPoints = [{x: m.x, y: m.y}];
+        }
+      } else if (mode === 'shapeTool') {
+        shapeStartPos = { x: m.x, y: m.y };
+        currentLine = {
+          isShape: true, points: [],
+          shapeType: document.getElementById('shapeType').value,
+          shapeMode: document.getElementById('shapeMode').value,
+          fillColor: document.getElementById('shapeFillColor').value,
+          strokeColor: document.getElementById('shapeStrokeColor').value,
+          strokeWeight: parseFloat(document.getElementById('shapeStrokeWeight').value),
+          alpha: parseFloat(document.getElementById('shapeAlpha').value),
+          mirror: document.getElementById('mirrorMode').value
+        };
+      } else {
+        let brushColor = document.getElementById('brushColor').value;
+        let size = parseFloat(document.getElementById('drawBrushSize').value);
+        let alpha = parseFloat(document.getElementById('drawBrushAlpha').value);
+        let type = mode === 'fxPen' ? 'fx_' + document.getElementById('fxType').value : (mode === 'eraser' ? 'eraser' : document.getElementById('drawPenType').value);
+        if (mode === 'eraser') alpha = 255;
+
+        currentLine = {
+          isShape: false, points: [{ x: m.x, y: m.y, seed: performance.now() + random(1000, 99999) }],
+          color: brushColor, size: size, alpha: alpha, type: type, mirror: document.getElementById('mirrorMode').value,
+          pixelSize: parseFloat(document.getElementById('fxPixelSize').value),
+          abHardness: parseFloat(document.getElementById('abHardness').value), abDensity: parseFloat(document.getElementById('abDensity').value), abSpread: parseFloat(document.getElementById('abSpread').value)
+        };
+      }
+    }
+
+    function mouseDragged() {
+      if (isPanning) { offsetX = mouseX - startPanX; offsetY = mouseY - startPanY; return; }
+      let m = getCanvasMouse();
+      if (isDrawingLasso) { lassoPoints.push({x: m.x, y: m.y}); } 
+      else if (isMovingLasso && currentLine && currentLine.points.length > 0) {
+        let lastPt = currentLine.points[currentLine.points.length - 1];
+        lassoPos.x += (m.x - lastPt.x); lassoPos.y += (m.y - lastPt.y);
+        currentLine.points.push({ x: m.x, y: m.y });
+      }
+    }
+
+    function mouseReleased() {
+      isPanning = false;
+      let mode = document.getElementById('toolMode').value;
+      let al = layers.find(l => l.id === activeLayerId);
+      
+      if (isDrawingLasso) {
+        isDrawingLasso = false;
+        if (lassoPoints.length > 5 && al) {
+          lassoSelectedLines = []; lassoPos = { x: 0, y: 0 };
+          let keepLines = [];
+          for (let lineObj of al.lines) {
+            let insidePoints = [], outsidePoints = [];
+            for (let pt of lineObj.points) {
+              if (isPointInLasso(pt.x, pt.y, lassoPoints)) insidePoints.push(pt); else outsidePoints.push(pt);
+            }
+            if (insidePoints.length > 0) {
+              let copyLine = JSON.parse(JSON.stringify(lineObj)); copyLine.points = insidePoints;
+              lassoSelectedLines.push(copyLine);
+            }
+            if (outsidePoints.length > 0) {
+              lineObj.points = outsidePoints; keepLines.push(lineObj);
+            }
+          }
+          al.lines = keepLines; if(lassoSelectedLines.length === 0) lassoPoints = [];
+        } else { lassoPoints = []; }
+      }
+      isMovingLasso = false;
+      if (currentLine && al) {
+        if ((mode === 'drawPen' || mode === 'fxPen' || mode === 'shapeTool') && currentLine.points.length > 0) {
+          al.lines.push(currentLine); saveHistory();
+        }
+      }
+      currentLine = null; shapeStartPos = null;
+    }
+
+    function finalizeLasso() {
+      if (lassoSelectedLines.length === 0) { lassoPoints = []; return; }
+      let al = layers.find(l => l.id === activeLayerId);
+      if (al) {
+        for (let lineObj of lassoSelectedLines) {
+          for (let pt of lineObj.points) {
+            pt.x = pt.x * currentLassoScale + lassoPos.x; pt.y = pt.y * currentLassoScale + lassoPos.y;
+          }
+          if(!lineObj.isShape) lineObj.size *= currentLassoScale; else lineObj.strokeWeight *= currentLassoScale;
+          al.lines.push(lineObj);
+        }
+      }
+      lassoSelectedLines = []; lassoPoints = []; lassoPos = { x: 0, y: 0 }; currentLassoScale = 1.0;
+      document.getElementById('lassoScale').value = 1.0;
+    }
+
+    function mergeLayer(id) {
+      let index = layers.findIndex(l => l.id === id); if (index === -1 || index === layers.length - 1) return;
+      finalizeLasso();
+      let upperLayer = layers[index]; let lowerLayer = layers[index+1];
+      lowerLayer.lines = lowerLayer.lines.concat(upperLayer.lines);
+      layers.splice(index, 1); activeLayerId = lowerLayer.id; updateLayerUI(); saveHistory();
+    }
+
+    function toggleGlobalFilter(type) {
+      globalFilters[type] = !globalFilters[type];
+      updateFilterButtonsUI();
+      saveHistory(); 
+    }
+
+    function updateFilterButtonsUI() {
+      document.getElementById('fltBlur').classList.toggle('toggle-active', globalFilters.blur);
+      document.getElementById('fltMosaic').classList.toggle('toggle-active', globalFilters.mosaic);
+      document.getElementById('fltGray').classList.toggle('toggle-active', globalFilters.gray);
+      document.getElementById('fltSepia').classList.toggle('toggle-active', globalFilters.sepia);
+      document.getElementById('fltInvert').classList.toggle('toggle-active', globalFilters.invert);
+      document.getElementById('fltPoster').classList.toggle('toggle-active', globalFilters.poster);
+      document.getElementById('fltThresh').classList.toggle('toggle-active', globalFilters.thresh);
+    }
+
+    function applyActiveGlobalFiltersToBuffer(g) {
+      if (globalFilters.gray) g.filter(GRAY);
+      if (globalFilters.blur) g.filter(BLUR, 4);
+      if (globalFilters.invert) g.filter(INVERT);
+      if (globalFilters.poster) g.filter(POSTERIZE, 4);
+      if (globalFilters.thresh) g.filter(THRESHOLD, 0.4);
+      if (globalFilters.sepia) {
+        g.filter(GRAY); g.push(); g.fill(230, 160, 80, 40); g.blendMode(OVERLAY); g.rect(0, 0, g.width, g.height); g.pop();
+      }
+      if (globalFilters.mosaic) {
+        g.loadPixels();
+        let mSize = 16; 
+        for (let y = 0; y < g.height; y += mSize) {
+          for (let x = 0; x < g.width; x += mSize) {
+            let cx = min(x + mSize / 2, g.width - 1);
+            let cy = min(y + mSize / 2, g.height - 1);
+            let idx = (Math.floor(cx) + Math.floor(cy) * g.width) * 4;
+            let r = g.pixels[idx]; let green = g.pixels[idx+1]; let b = g.pixels[idx+2]; let a = g.pixels[idx+3];
+            
+            g.fill(r, green, b, a); g.noStroke();
+            g.rect(x, y, mSize, mSize);
+          }
+        }
+      }
+    }
+
+    function startGifRecording() {
+      if (recordingGif) return;
+      gifFrames = []; recordingGif = true;
+      document.getElementById('gifOverlay').style.display = 'flex';
+    }
+
+    function finalizeGifExport() {
+      document.getElementById('gifOverlay').style.display = 'none';
+      saveGif('mozo-animation', maxGifFrames, { delay: 100, units: 'frames' });
+    }
+
+    function exportProject() {
+      let projectData = {
+        version: "1.3", globalFilters: globalFilters, bgColor: document.getElementById('bgColor').value,
+        canvasW: currentCanvasW, canvasH: currentCanvasH,
+        layers: layers.map(l => { return { id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, lines: l.lines }; })
+      };
+      let blob = new Blob([JSON.stringify(projectData)], { type: "application/json" });
+      let a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = "mozo-art-" + year() + month() + day() + ".mozo"; a.click();
+    }
+
+    function importProject(e) {
+      const file = e.target.files[0]; if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        try {
+          let data = JSON.parse(event.target.result);
+          if(data.bgColor) document.getElementById('bgColor').value = data.bgColor;
+          if(data.canvasW && data.canvasH) {
+            currentCanvasW = data.canvasW;
+            currentCanvasH = data.canvasH;
+            document.getElementById('canvasWidthInput').value = currentCanvasW;
+            document.getElementById('canvasHeightInput').value = currentCanvasH;
+            bufferImg.resizeCanvas(currentCanvasW, currentCanvasH);
+          }
+          if(data.globalFilters) globalFilters = Object.assign({ blur:false, mosaic:false, gray:false, sepia:false, invert:false, poster:false, thresh:false }, data.globalFilters);
+          layers = data.layers.map(l => { return { id: l.id, name: l.name, visible: l.visible, opacity: l.opacity, lines: l.lines, imgElement: null }; });
+          let maxId = -1; layers.forEach(l => { if(l.id > maxId) maxId = l.id; }); layerCounter = maxId + 1;
+          activeLayerId = layers[0] ? layers[0].id : 0; updateLayerUI(); updateFilterButtonsUI(); saveHistory();
+          alert("復元しました！");
+        } catch (err) { alert("失敗しました。"); }
+      };
+      reader.readAsText(file); e.target.value = '';
+    }
+
+    function mouseWheel(event) { if (mouseX < 280) return; zoom = constrain(zoom * (event.delta < 0 ? 1.1 : 1/1.1), 0.1, 10.0); document.getElementById('zoomPercent').innerText = Math.round(zoom * 100); return false; }
+
+    function drawGrid(bgCol) {
+      push(); stroke(lightness(bgCol) > 50 ? color(0, 30) : color(255, 20)); strokeWeight(1);
+      for (let x = 0; x < currentCanvasW; x += 40) line(x, 0, x, currentCanvasH);
+      for (let y = 0; y < currentCanvasH; y += 40) line(0, y, currentCanvasW, y);
+      pop();
+    }
+
+    function addLayer(name) {
+      let id = layerCounter++; layers.unshift({ id: id, name: name, visible: true, opacity: 255, lines: [] });
+      activeLayerId = id; updateLayerUI();
+    }
+
+    function updateLayerUI() {
+      const list = document.getElementById('layerList'); list.innerHTML = '';
+      layers.forEach((layer, idx) => {
+        const item = document.createElement('div'); item.className = `layer-item ${layer.id === activeLayerId ? 'active' : ''}`;
+        item.addEventListener('click', (e) => { if(e.target.tagName !== 'BUTTON' && e.target.tagName !== 'INPUT') { activeLayerId = layer.id; updateLayerUI(); } });
+        const row = document.createElement('div'); row.style.display = 'flex'; row.style.justifyContent = 'space-between'; row.style.alignItems = 'center';
+        const nameSpan = document.createElement('span'); nameSpan.innerText = (layer.visible ? "👁 " : "❌ ") + layer.name;
+        const btnContainer = document.createElement('div'); btnContainer.className = 'btn-group';
+        const toggleBtn = document.createElement('button'); toggleBtn.className = 'btn-small'; toggleBtn.innerText = "表示"; toggleBtn.addEventListener('click', () => { layer.visible = !layer.visible; updateLayerUI(); });
+        if (idx < layers.length - 1) {
+          const mergeBtn = document.createElement('button'); mergeBtn.className = 'btn-small'; mergeBtn.innerText = "🔽"; mergeBtn.style.background = "#4a148c";
+          mergeBtn.addEventListener('click', (e) => { e.stopPropagation(); mergeLayer(layer.id); }); btnContainer.appendChild(mergeBtn);
+        }
+        const delBtn = document.createElement('button'); delBtn.className = 'btn-small'; delBtn.innerText = "消"; delBtn.style.background = "#555";
+        delBtn.addEventListener('click', () => { if (layers.length > 1) { layers = layers.filter(l => l.id !== layer.id); if (activeLayerId === layer.id) activeLayerId = layers[0].id; updateLayerUI(); saveHistory(); } });
+        btnContainer.appendChild(toggleBtn); btnContainer.appendChild(delBtn); row.appendChild(nameSpan); row.appendChild(btnContainer);
+        const opLabel = document.createElement('label'); opLabel.style.fontSize = '10px'; opLabel.innerText = "不透明: ";
+        const opSlider = document.createElement('input'); opSlider.type = 'range'; opSlider.min = '0'; opSlider.max = '255'; opSlider.value = layer.opacity; opSlider.style.width = '70px';
+        opSlider.addEventListener('input', (e) => { layer.opacity = parseFloat(e.target.value); });
+        opLabel.appendChild(opSlider); item.appendChild(row); item.appendChild(opLabel); list.appendChild(item);
+      });
+    }
+
+    function windowResized() { resizeCanvas(windowWidth, windowHeight); }
+  </script>
+</body>
+</html>
